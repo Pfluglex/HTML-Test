@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Texas Feature Retention Map</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script src="https://unpkg.com/topojson@3"></script>
+  <style>
+    body { margin: 0; font-family: sans-serif; }
+    svg { width: 100vw; height: 100vh; }
+    .county {
+      stroke: #fff;
+      stroke-width: 0.5;
+      cursor: pointer;
+    }
+    .tooltip {
+      position: absolute;
+      background: white;
+      border: 1px solid #ccc;
+      padding: 4px 8px;
+      pointer-events: none;
+      font-size: 14px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+    .controls {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: rgba(255,255,255,0.9);
+      padding: 10px;
+      border-radius: 5px;
+    }
+  </style>
+</head>
+<body>
+  <div class="controls">
+    <label>Color by:
+      <select id="metric-select">
+        <option value="retention">Feature Retention</option>
+        <option value="income">Income Level</option>
+      </select>
+    </label>
+  </div>
+  <div class="tooltip" id="tooltip" style="display: none;"></div>
+  <svg></svg>
+
+  <script>
+    const svg = d3.select("svg");
+    const tooltip = d3.select("#tooltip");
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+
+    const projection = d3.geoAlbersUsa().fitSize([width, height], {type: "FeatureCollection", features: []});
+    const path = d3.geoPath().projection(projection);
+
+    const colorScales = {
+      retention: d3.scaleSequential(d3.interpolateReds).domain([0, 1]),
+      income: d3.scaleSequential(d3.interpolateBlues).domain([20000, 90000])
+    };
+
+    // Fake data keyed by FIPS code
+    const fakeData = {};
+    for (let i = 48001; i <= 48507; i += 10) {
+      fakeData[i.toString()] = {
+        retention: Math.random(),
+        income: 30000 + Math.random() * 60000
+      };
+    }
+
+    const selectedMetric = () => document.getElementById("metric-select").value;
+
+    d3.json("https://cdn.jsdelivr.net/npm/us-atlas@3/counties-10m.json").then(us => {
+      const counties = topojson.feature(us, us.objects.counties).features;
+      const texasCounties = counties.filter(d => d.id.startsWith("48")); // Texas = state FIPS 48
+
+      projection.fitSize([width, height], {type: "FeatureCollection", features: texasCounties});
+
+      const drawMap = () => {
+        const metric = selectedMetric();
+        const color = colorScales[metric];
+
+        svg.selectAll("path")
+          .data(texasCounties)
+          .join("path")
+          .attr("class", "county")
+          .attr("d", path)
+          .attr("fill", d => {
+            const val = fakeData[d.id]?.[metric];
+            return val != null ? color(val) : "#eee";
+          })
+          .on("mousemove", (event, d) => {
+            const data = fakeData[d.id];
+            tooltip.style("display", "block")
+              .style("left", (event.pageX + 10) + "px")
+              .style("top", (event.pageY + 10) + "px")
+              .html(`
+                <strong>County FIPS:</strong> ${d.id}<br>
+                <strong>Retention:</strong> ${data?.retention?.toFixed(2) ?? "n/a"}<br>
+                <strong>Income:</strong> $${Math.floor(data?.income ?? 0).toLocaleString()}
+              `);
+          })
+          .on("mouseout", () => {
+            tooltip.style("display", "none");
+          });
+      };
+
+      document.getElementById("metric-select").addEventListener("change", drawMap);
+      drawMap();
+    });
+  </script>
+</body>
+</html>
