@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive 3D World Map Adventure</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #334155 100%);
+            min-height: 100vh;
+            color: white;
+            overflow-x: hidden;
+        }
+
+        .container {
+            display: flex;
+            height: 100vh;
+            position: relative;
+        }
+
+        .map-container {
+            flex: 1;
+            position: relative;
+            perspective: 1000px;
+            background: radial-gradient(circle at center, #1e3a8a 0%, #0f172a 70%);
+        }
+
+        .map-wrapper {
+            width: 100%;
+            height: 100%;
+            transform-style: preserve-3d;
+            transition: transform 0.3s ease;
+        }
+
+        svg {
+            width: 100%;
+            height: 100%;
+            cursor: grab;
+        }
+
+        svg:active {
+            cursor: grabbing;
+        }
+
+        .country {
+            fill: #3b82f6;
+            stroke: #1e40af;
+            stroke-width: 1px;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .country:hover {
+            fill: #f59e0b;
+            stroke: #d97706;
+            stroke-width: 3px;
+            filter: drop-shadow(0 0 20px rgba(245, 158, 11, 0.8));
+        }
+
+        .country.visited {
+            fill: #10b981;
+            stroke: #059669;
+        }
+
+        .country.visited:hover {
+            fill: #34d399;
+            stroke: #10b981;
+        }
+
+        .tooltip {
+            position: absolute;
+            background: rgba(15, 23, 42, 0.95);
+            border: 2px solid #3b82f6;
+            border-radius: 12px;
+            padding: 15px;
+            font-size: 14px;
+            pointer-events: none;
+            opacity: 0;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+            max-width: 250px;
+            z-index: 1000;
+        }
+
+        .tooltip.visible {
+            opacity: 1;
+            transform: scale(1.05);
+        }
+
+        .tooltip h3 {
+            color: #60a5fa;
+            margin-bottom: 8px;
+            font-size: 16px;
+        }
+
+        .tooltip .population {
+            color: #fbbf24;
+            font-weight: bold;
+            font-size: 18px;
+        }
+
+        .sidebar {
+            width: 350px;
+            background: rgba(15, 23, 42, 0.9);
+            backdrop-filter: blur(20px);
+            border-left: 2px solid #3b82f6;
+            padding: 25px;
+            overflow-y: auto;
+            box-shadow: -10px 0 30px rgba(0, 0, 0, 0.3);
+        }
+
+        .sidebar h2 {
+            color: #60a5fa;
+            margin-bottom: 20px;
+            font-size: 24px;
+            text-align: center;
+            text-shadow: 0 0 10px rgba(96, 165, 250, 0.5);
+        }
+
+        .travel-stats {
+            background: linear-gradient(135deg, #1e40af, #3b82f6);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 25px;
+            text-align: center;
+            box-shadow: 0 10px 20px rgba(59, 130, 246, 0.3);
+        }
+
+        .travel-stats h3 {
+            font-size: 18px;
+            margin-bottom: 10px;
+        }
+
+        .stat-number {
+            font-size: 32px;
+            font-weight: bold;
+            color: #fbbf24;
+            text-shadow: 0 0 10px rgba(251, 191, 36, 0.5);
+        }
+
+        .visited-list {
+            list-style: none;
+        }
+
+        .visited-item {
+            background: linear-gradient(135deg, #059669, #10b981);
+            margin-bottom: 12px;
+            padding: 12px 15px;
+            border-radius: 8px;
+            border-left: 4px solid #34d399;
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .visited-item::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+            transition: left 0.5s;
+        }
+
+        .visited-item:hover::before {
+            left: 100%;
+        }
+
+        .visited-item:hover {
+            transform: translateX(5px) scale(1.02);
+            box-shadow: 0 6px 20px rgba(16, 185, 129, 0.4);
+        }
+
+        .country-name {
+            font-weight: bold;
+            font-size: 16px;
+            margin-bottom: 4px;
+        }
+
+        .country-pop {
+            font-size: 12px;
+            opacity: 0.9;
+        }
+
+        .instructions {
+            background: rgba(59, 130, 246, 0.1);
+            border: 1px solid #3b82f6;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            font-size: 12px;
+            line-height: 1.4;
+        }
+
+        .glow-effect {
+            animation: pulse 2s ease-in-out infinite alternate;
+        }
+
+        @keyframes pulse {
+            from {
+                box-shadow: 0 0 20px rgba(59, 130, 246, 0.4);
+            }
+            to {
+                box-shadow: 0 0 30px rgba(59, 130, 246, 0.8);
+            }
+        }
+
+        .continent {
+            opacity: 0.8;
+            transform-origin: center;
+        }
+
+        .continent:hover {
+            opacity: 1;
+            transform: scale(1.02);
+        }
+
+        .loading {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            font-size: 18px;
+            color: #60a5fa;
+        }
+
+        .spinner {
+            border: 3px solid rgba(96, 165, 250, 0.3);
+            border-top: 3px solid #60a5fa;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin-right: 15px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="map-container">
+            <div class="map-wrapper" id="map-wrapper">
+                <svg id="world-map"></svg>
+            </div>
+            <div class="tooltip" id="tooltip">
+                <h3 id="tooltip-country"></h3>
+                <div>Population: <span class="population" id="tooltip-population"></span></div>
+            </div>
+        </div>
+        
+        <div class="sidebar">
+            <h2>🌍 Adventure Tracker</h2>
+            
+            <div class="instructions glow-effect">
+                <strong>How to explore:</strong><br>
+                • Hover over countries to see population data<br>
+                • Click countries to mark as visited<br>
+                • Track your global adventures!
+            </div>
+            
+            <div class="travel-stats">
+                <h3>Countries Visited</h3>
+                <div class="stat-number" id="visit-count">0</div>
+                <div style="font-size: 12px; margin-top: 5px;">Start your adventure!</div>
+            </div>
+            
+            <h3 style="color: #10b981; margin-bottom: 15px;">📍 Places You've Been</h3>
+            <ul class="visited-list" id="visited-list">
+                <li style="text-align: center; color: #64748b; font-style: italic; padding: 20px;">
+                    Start exploring to build your adventure list!
+                </li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        // Simplified world map data with major countries and regions
+        const worldData = [
+            // North America
+            { name: 'United States', population: 331, x: 200, y: 150, width: 180, height: 120, continent: 'North America' },
+            { name: 'Canada', population: 38, x: 150, y: 80, width: 280, height: 100, continent: 'North America' },
+            { name: 'Mexico', population: 130, x: 180, y: 200, width: 100, height: 80, continent: 'North America' },
+            { name: 'Greenland', population: 0.056, x: 350, y: 50, width: 80, height: 60, continent: 'North America' },
+            
+            // South America
+            { name: 'Brazil', population: 213, x: 300, y: 300, width: 120, height: 150, continent: 'South America' },
+            { name: 'Argentina', population: 45, x: 280, y: 400, width: 80, height: 100, continent: 'South America' },
+            { name: 'Colombia', population: 51, x: 250, y: 280, width: 60, height: 70, continent: 'South America' },
+            { name: 'Peru', population: 33, x: 230, y: 320, width: 50, height: 80, continent: 'South America' },
+            { name: 'Venezuela', population: 28, x: 260, y: 260, width: 50, height: 40, continent: 'South America' },
+            { name: 'Chile', population: 19, x: 260, y: 380, width: 30, height: 120, continent: 'South America' },
+            
+            // Europe
+            { name: 'Russia', population: 146, x: 520, y: 100, width: 200, height: 80, continent: 'Europe/Asia' },
+            { name: 'Germany', population: 84, x: 480, y: 140, width: 40, height: 30, continent: 'Europe' },
+            { name: 'United Kingdom', population: 67, x: 450, y: 130, width: 30, height: 40, continent: 'Europe' },
+            { name: 'France', population: 68, x: 460, y: 150, width: 35, height: 35, continent: 'Europe' },
+            { name: 'Italy', population: 60, x: 480, y: 170, width: 25, height: 40, continent: 'Europe' },
+            { name: 'Spain', population: 47, x: 440, y: 170, width: 35, height: 25, continent: 'Europe' },
+            { name: 'Poland', population: 38, x: 490, y: 130, width: 30, height: 25, continent: 'Europe' },
+            { name: 'Ukraine', population: 44, x: 510, y: 140, width: 40, height: 25, continent: 'Europe' },
+            
+            // Africa
+            { name: 'Nigeria', population: 211, x: 470, y: 250, width: 40, height: 35, continent: 'Africa' },
+            { name: 'Ethiopia', population: 105, x: 520, y: 260, width: 35, height: 40, continent: 'Africa' },
+            { name: 'Egypt', population: 104, x: 510, y: 220, width: 30, height: 25, continent: 'Africa' },
+            { name: 'South Africa', population: 60, x: 500, y: 360, width: 40, height: 35, continent: 'Africa' },
+            { name: 'Kenya', population: 54, x: 520, y: 290, width: 25, height: 30, continent: 'Africa' },
+            { name: 'Tanzania', population: 60, x: 515, y: 310, width: 30, height: 25, continent: 'Africa' },
+            { name: 'Algeria', population: 44, x: 460, y: 210, width: 50, height: 40, continent: 'Africa' },
+            { name: 'Morocco', population: 37, x: 430, y: 210, width: 30, height: 25, continent: 'Africa' },
+            
+            // Asia
+            { name: 'China', population: 1412, x: 600, y: 180, width: 120, height: 100, continent: 'Asia' },
+            { name: 'India', population: 1380, x: 580, y: 230, width: 80, height: 70, continent: 'Asia' },
+            { name: 'Indonesia', population: 274, x: 650, y: 290, width: 70, height: 40, continent: 'Asia' },
+            { name: 'Pakistan', population: 225, x: 570, y: 210, width: 40, height: 35, continent: 'Asia' },
+            { name: 'Bangladesh', population: 166, x: 620, y: 240, width: 20, height: 15, continent: 'Asia' },
+            { name: 'Japan', population: 125, x: 730, y: 180, width: 30, height: 50, continent: 'Asia' },
+            { name: 'Philippines', population: 110, x: 680, y: 260, width: 25, height: 40, continent: 'Asia' },
+            { name: 'Vietnam', population: 98, x: 650, y: 250, width: 25, height: 35, continent: 'Asia' },
+            { name: 'Turkey', population: 85, x: 510, y: 180, width: 40, height: 25, continent: 'Asia/Europe' },
+            { name: 'Iran', population: 84, x: 540, y: 200, width: 45, height: 30, continent: 'Asia' },
+            { name: 'Thailand', population: 70, x: 640, y: 260, width: 25, height: 30, continent: 'Asia' },
+            { name: 'South Korea', population: 52, x: 710, y: 180, width: 15, height: 20, continent: 'Asia' },
+            { name: 'Myanmar', population: 55, x: 630, y: 240, width: 20, height: 30, continent: 'Asia' },
+            { name: 'Afghanistan', population: 39, x: 560, y: 200, width: 30, height: 25, continent: 'Asia' },
+            { name: 'Saudi Arabia', population: 35, x: 520, y: 230, width: 50, height: 35, continent: 'Asia' },
+            
+            // Oceania
+            { name: 'Australia', population: 26, x: 700, y: 350, width: 90, height: 60, continent: 'Oceania' },
+            { name: 'Papua New Guinea', population: 9, x: 720, y: 300, width: 25, height: 20, continent: 'Oceania' },
+            { name: 'New Zealand', population: 5, x: 780, y: 380, width: 20, height: 30, continent: 'Oceania' }
+        ];
+
+        let visitedCountries = [];
+        let svg, tooltip;
+
+        // Initialize the map
+        function initMap() {
+            svg = d3.select('#world-map');
+            const width = window.innerWidth * 0.7;
+            const height = window.innerHeight;
+            
+            svg.attr('width', width).attr('height', height);
+            
+            // Set up tooltip
+            tooltip = d3.select('#tooltip');
+            
+            // Scale factor for responsive design
+            const scaleX = width / 900;
+            const scaleY = height / 500;
+            const scale = Math.min(scaleX, scaleY);
+            
+            // Create countries
+            svg.selectAll('.country')
+                .data(worldData)
+                .enter()
+                .append('rect')
+                .attr('class', 'country')
+                .attr('x', d => d.x * scale)
+                .attr('y', d => d.y * scale)
+                .attr('width', d => d.width * scale)
+                .attr('height', d => d.height * scale)
+                .attr('rx', 5)
+                .on('mouseover', handleMouseOver)
+                .on('mousemove', handleMouseMove)
+                .on('mouseout', handleMouseOut)
+                .on('click', handleCountryClick);
+            
+            // Add country labels
+            svg.selectAll('.country-label')
+                .data(worldData.filter(d => d.width > 40)) // Only label larger countries
+                .enter()
+                .append('text')
+                .attr('class', 'country-label')
+                .attr('x', d => (d.x + d.width/2) * scale)
+                .attr('y', d => (d.y + d.height/2) * scale)
+                .attr('text-anchor', 'middle')
+                .attr('dy', '0.35em')
+                .style('fill', 'white')
+                .style('font-size', `${Math.max(10, 12 * scale)}px`)
+                .style('font-weight', 'bold')
+                .style('text-shadow', '1px 1px 2px rgba(0,0,0,0.7)')
+                .style('pointer-events', 'none')
+                .text(d => d.name);
+        }
+
+        function handleMouseOver(event, d) {
+            // Update tooltip content
+            document.getElementById('tooltip-country').textContent = d.name;
+            document.getElementById('tooltip-population').textContent = 
+                `${d.population.toLocaleString()} million`;
+            
+            // Show tooltip
+            tooltip.classed('visible', true);
+            
+            // Add 3D hover effect to map wrapper
+            const mapWrapper = document.getElementById('map-wrapper');
+            mapWrapper.style.transform = 'rotateX(2deg) rotateY(3deg)';
+        }
+
+        function handleMouseMove(event) {
+            tooltip
+                .style('left', (event.pageX + 15) + 'px')
+                .style('top', (event.pageY - 10) + 'px');
+        }
+
+        function handleMouseOut() {
+            tooltip.classed('visible', false);
+            
+            // Reset 3D effect
+            const mapWrapper = document.getElementById('map-wrapper');
+            mapWrapper.style.transform = 'rotateX(0deg) rotateY(0deg)';
+        }
+
+        function handleCountryClick(event, d) {
+            const element = d3.select(this);
+            
+            if (visitedCountries.some(c => c.name === d.name)) {
+                // Remove from visited
+                visitedCountries = visitedCountries.filter(c => c.name !== d.name);
+                element.classed('visited', false);
+            } else {
+                // Add to visited
+                visitedCountries.push(d);
+                element.classed('visited', true);
+            }
+            
+            updateVisitedList();
+        }
+
+        function updateVisitedList() {
+            const list = document.getElementById('visited-list');
+            const countElement = document.getElementById('visit-count');
+            
+            countElement.textContent = visitedCountries.length;
+            
+            if (visitedCountries.length === 0) {
+                list.innerHTML = '<li style="text-align: center; color: #64748b; font-style: italic; padding: 20px;">Start exploring to build your adventure list!</li>';
+                return;
+            }
+            
+            list.innerHTML = visitedCountries
+                .sort((a, b) => a.name.localeCompare(b.name))
+                .map(country => {
+                    return `
+                        <li class="visited-item">
+                            <div class="country-name">${country.name}</div>
+                            <div class="country-pop">Population: ${country.population.toLocaleString()}M</div>
+                            <div class="country-pop" style="font-size: 10px; opacity: 0.7;">${country.continent}</div>
+                        </li>
+                    `;
+                })
+                .join('');
+        }
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            if (svg) {
+                const width = window.innerWidth * 0.7;
+                const height = window.innerHeight;
+                
+                svg.attr('width', width).attr('height', height);
+                
+                const scaleX = width / 900;
+                const scaleY = height / 500;
+                const scale = Math.min(scaleX, scaleY);
+                
+                // Update country positions and sizes
+                svg.selectAll('.country')
+                    .attr('x', d => d.x * scale)
+                    .attr('y', d => d.y * scale)
+                    .attr('width', d => d.width * scale)
+                    .attr('height', d => d.height * scale);
+                
+                // Update labels
+                svg.selectAll('.country-label')
+                    .attr('x', d => (d.x + d.width/2) * scale)
+                    .attr('y', d => (d.y + d.height/2) * scale)
+                    .style('font-size', `${Math.max(10, 12 * scale)}px`);
+            }
+        });
+
+        // Initialize the map when page loads
+        initMap();
+    </script>
+</body>
+</html>s
